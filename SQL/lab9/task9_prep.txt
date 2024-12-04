@@ -1,0 +1,153 @@
+#  !  ####################
+Сначала Ошибку (Исключение) надо создать
+
+CREATE EXCEPTION ERROR 'Ошибка в процедуре';
+
+#  !  ####################
+
+
+
+#1  ####################
+create or alter procedure PREP8_1 (   --GOODSBYAGENT
+    AGENT type of column AGENT.NAME_AG)
+returns (
+    GOODS type of column GOODS.NOMENCLATURE,
+    CNT integer)
+as
+declare variable ID type of column AGENT.ID_AG;
+begin
+    id = (select a.id_ag
+              from agent a
+          where a.name_ag=:agent);
+    if (id is null) then
+        exception error;
+
+    for select g.nomenclature, count(o.id)
+            from operation O
+            join goods G
+                using(id_goods)
+            where O.id_ag = :id
+            group by G.nomenclature
+        into :goods, :cnt
+    do
+        suspend;
+end
+
+процедура, выдающая для зад. поставщика
+  список товаров + кол-во операций с ними
+
+(!) проверка на правильность имеет вид вызова исключений
+(!) процедуры, выдающие таблицы должны быть с 
+  определёнными выходными параметрами
+
+вызов в SQL Editor как обычную таблицу:
+select *
+    from prep8_1('Надежный')
+
+или
+
+select A.goods, G.measure, A.cnt
+        from prep8_1('Надежный') A
+        join goods G
+            on A.goods=G.nomenclature
+
+
+
+#2  ####################
+create or alter procedure TASK8_02 (  --GOODSBYAGENT from primer2
+    AGENT type of column AGENT.NAME_AG)
+returns (
+    GOODS type of column GOODS.NOMENCLATURE,
+    CNT integer)
+as
+declare variable ID type of column AGENT.ID_AG;
+begin
+    id = (select a.id_ag
+              from agent a
+          where a.name_ag=:agent);
+
+    if (id is null) then
+    begin
+        in autonomous transaction do
+            insert into log_file (inform)
+                values ('в БД нет агента '||:agent);
+        exception error ;
+    end
+
+    for select g.nomenclature, count(o.id)
+            from operation O
+            join goods G
+                using(id_goods)
+            where O.id_ag = :id
+            group by G.nomenclature
+        into :goods, :cnt
+    do
+        suspend;
+end
+
+задание из примера 1, но если искл.,
+  то запись в LOGFILE
+
+Важно! :
+если есть EXXEPTION, то процедура сразу закончиться
+  rollback'ом
+  => инсерт в логфайл нада в автономной транзакции,
+     которая закончиться commit'ом
+
+
+
+#3  ####################
+create or alter procedure PREP8_3 (  --TAB_RANG
+    NAME_T char(31)
+)
+returns (
+    KOL integer
+)
+as
+declare variable OPER varchar(200);
+begin
+    OPER = 'select count(*) from ' || name_t;
+
+    execute statement OPER
+        into :KOL ;
+
+    suspend;
+end
+
+процедура, возвращающая по заданому имени в таблице
+  кол-во строк в ней
+тут низя заранее объявить тип параметра
+  => построим текст запроса в виде строковой переменной
+  такую переменную можно использовать в операциях
+    [for] execute statement <выражение в виде строки>
+      into <список переменных>
+    [do <оператор>] 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

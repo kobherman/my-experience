@@ -1,0 +1,120 @@
+## 1  ####################
+список сотрудников + наимеоваие работы,оклад < 50,000
+
+SELECT e.FULL_NAME, jb.JOB_TITLE, e.SALARY
+        FROM EMPLOYEE e
+        JOIN JOB jb
+            USING(JOB_CODE, JOB_GRADE, JOB_COUNTRY)
+    WHERE (SALARY < 50000);
+
+
+
+## 2  ####################
+для каждого проекта - оклад руководителя проекта
+
+SELECT PROJ_NAME, SALARY
+        FROM EMPLOYEE JOIN PROJECT ON TEAM_LEADER = EMP_NO;
+
+
+
+## 3  ####################
+список отделов, оклад руководителя > 70,000
+
+SELECT DEPARTMENT, FULL_NAME, SALARY
+        FROM EMPLOYEE
+        JOIN PROJECT
+            ON TEAM_LEADER = EMP_NO
+    WHERE (SALARY > 70000);
+
+
+
+## 4  ####################
+список руководителей отделов + телефон (телефон отдела+доб код)
+  + оклад
+
+SELECT DEPARTMENT, FULL_NAME AS HEAD_OF_DEP, PHONE_NO||' '||COALESCE(PHONE_EXT, '') AS TELEPHONE, SALARY
+        FROM DEPARTMENT
+        JOIN EMPLOYEE
+            ON (MNGR_NO = EMP_NO);
+
+
+
+## 5  ####################
+историю изменения зп начальника отдела Field Office: East Coast
+
+SELECT DEPARTMENT, FULL_NAME AS HEAD_OF_DEP, OLD_SALARY, CHANGE_DATE, PERCENT_CHANGE, NEW_SALARY
+        FROM EMPLOYEE JOIN DEPARTMENT ON (MNGR_NO = EMP_NO)
+            JOIN SALARY_HISTORY USING(EMP_NO)
+    WHERE (DEPARTMENT = 'Field Office: East Coast');
+
+
+
+## 6  ####################
+для каждого заказа - стоимость + валюта страны заказчика
+
+SELECT PO_NUMBER, TOTAL_VALUE, CURRENCY, COUNTRY
+        FROM SALES JOIN CUSTOMER USING(CUST_NO)
+            JOIN COUNTRY USING(COUNTRY);
+
+
+
+## 7  ####################
+для каждого заказа - страна сотрудника, оформ договор-заказ
+
+SELECT PO_NUMBER, EMP_NO, JOB_COUNTRY
+        FROM SALES JOIN EMPLOYEE ON (SALES_REP = EMP_NO);
+
+
+
+
+## 8  ####################
+сотрудники, работающие над Video Database + оклад;
+  по убыванию оклада
+
+SELECT pj.PROJ_NAME, e.FULL_NAME, e.SALARY
+        FROM EMPLOYEE_PROJECT epj
+        JOIN EMPLOYEE e
+            USING(EMP_NO)
+        JOIN PROJECT pj
+            USING(PROJ_ID)
+    WHERE (epj.PROJ_ID = 'VBASE')
+    ORDER BY SALARY DESC;
+
+
+
+## 9  ####################
+число сотрудников должности Sales Representative
+
+SELECT JOB_TITLE, COUNT (EMP_NO) AS N
+        FROM JOB
+        JOIN EMPLOYEE
+        USING(JOB_CODE, JOB_GRADE, JOB_COUNTRY)
+    WHERE (JOB_TITLE = 'Sales Representative')
+    GROUP BY JOB_TITLE;
+
+
+
+## 10  ####################
+список названий отделов, де работает > 3 сотрудников
+
+SELECT DEPARTMENT, COUNT (EMP_NO) AS N
+        FROM DEPARTMENT JOIN EMPLOYEE USING(DEPT_NO)
+    GROUP BY DEPARTMENT
+    HAVING COUNT (EMP_NO) > 3;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

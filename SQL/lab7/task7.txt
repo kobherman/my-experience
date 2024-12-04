@@ -1,0 +1,275 @@
+## 1  ####################
+добавить в WAREHOUSE 1-2 записи
+
+INSERT INTO WAREHOUSE (ID_WH, NAME, TOWN)
+    VALUES ('W1', 'Склад Хороший', 'Батайск');
+
+
+
+## 2  ####################
+добавить записи в GOODS_WH & OPERATION
+  (в операции исп наименования товаров, агентов и складов, а не соды)
+
+INSERT INTO GOODS_WH (ID_WH, ID_GOODS, QUANTITY)
+    VALUES ( (SELECT ID_WH
+                  FROM WAREHOUSE
+              where NAME = 'Склад Хороший'),
+              (select id_goods
+                  FROM goods
+               WHERE NOMENCLATURE='Маркер'),
+              322);
+
+INSERT INTO operation (ID_WH, ID_GOODS, QUANTITY, TYPEOP, PRICE, OP_DATE, ID_AG)
+    VALUES ( (SELECT ID_WH
+                  FROM WAREHOUSE
+              where NAME = 'Склад Хороший'),
+              (select id_goods
+                  FROM goods
+               WHERE NOMENCLATURE='Маркер'),
+              118,
+              'A',
+              200,
+              '9/25/2006',
+              (SELECT ID_AG
+                  from AGENT
+               WHERE NAME_AG='ООО Ключи') ); 
+
+
+
+## 3  ####################
+поменять в добавленных данных ценну товара + кол-во
+  (условие на грамоздкость остаётся)
+
+UPDATE GOODS_WH
+        SET QUANTITY = QUANTITY * 2
+    WHERE ID_WH = (SELECT ID_WH
+                      FROM WAREHOUSE
+                   where NAME = 'Склад Хороший')
+        AND ID_GOODS = (select id_goods
+                            FROM goods
+                        WHERE NOMENCLATURE='Маркер');
+
+UPDATE operation
+        SET QUANTITY = QUANTITY - 50,
+            PRICE = 150
+    WHERE ID_WH = (SELECT ID_WH
+                  FROM WAREHOUSE
+              where NAME = 'Склад Хороший')
+        AND ID_GOODS = (select id_goods
+                            FROM goods
+                        WHERE NOMENCLATURE='Маркер')
+        AND TYPEOP = 'A'
+        AND ID_AG = (SELECT ID_AG
+                        from AGENT
+                     WHERE NAME_AG='ООО Ключи')
+        AND OP_DATE = '9/25/2006';
+
+
+
+## 4  ####################
+изм. во всех операциях по одному из агентов цену товара
+  (условие на грамоздкость остаётся) 
+
+UPDATE OPERATION
+        SET PRICE = PRICE * 1.2
+    WHERE ID_AG = (SELECT ID_AG
+                          FROM AGENT
+                       WHERE NAME_AG='Астра');
+
+
+
+## 5  ####################
+удалить агентов без операций
+  (понять, кого удалять, - умом)
+
+таблица индексов агентов с нулём операций:
+SELECT ID_AG, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN AGENT
+            USING(ID_AG)
+    GROUP BY ID_AG
+    HAVING (COUNT(ID) = 0); 
+
+непосредственно задание:
+DELETE FROM AGENT
+    WHERE ID_AG IN (SELECT ID_AG
+                        FROM OPERATION
+                        RIGHT JOIN AGENT
+                            USING(ID_AG)
+                    GROUP BY ID_AG
+                    HAVING (COUNT(ID) = 0) );
+    
+
+
+## 6  ####################
+удалить склады без операций и без остатков
+  (тоже умом)
+
+аналогично пред заданию, склады без операций:
+SELECT ID_WH, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN WAREHOUSE
+            USING(ID_WH)
+    GROUP BY ID_WH
+    HAVING (COUNT(ID) = 0);
+
+нет остатка:
+SELECT ID_WH
+        FROM GOODS_WH
+    WHERE QUANTITY = 0;
+
+задание:
+DELETE FROM WAREHOUSE
+    WHERE ID_WH IN (SELECT ID_WH
+                            FROM OPERATION
+                            RIGHT JOIN WAREHOUSE
+                                USING(ID_WH)
+                        GROUP BY ID_WH
+                        HAVING (COUNT(ID) = 0)
+        or ID_WH IN (SELECT ID_WH
+                        FROM GOODS_WH
+                     WHERE QUANTITY = 0);
+
+
+
+================================================================================
+================================================================================
+
+
+
+## 7  ####################
+товары без операций
+
+SELECT ID_GOODS, NOMENCLATURE, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN GOODS
+            USING(ID_GOODS)
+    GROUP BY ID_GOODS, NOMENCLATURE
+    HAVING (COUNT(ID) = 0);
+
+
+
+## 8  ####################
+поставщики только с 1 операцией
+  (теперь если в задании нет условия на TYPEOP,
+   я буду игнорировать слово 'поставщик' и воспринимать
+     как 'агент')
+
+SELECT ID_AG, NAME_AG, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN AGENT
+            USING(ID_AG)
+    GROUP BY ID_AG, NAME_AG
+    HAVING (COUNT(ID) = 1);
+
+
+
+## 9  ####################
+товары c наиб. кол-вом операций 
+
+SELECT ID_GOODS, NOMENCLATURE, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN GOODS
+            USING(ID_GOODS)
+    GROUP BY ID_GOODS, NOMENCLATURE
+    HAVING COUNT(ID) >= ALL (SELECT COUNT(ID)
+                                FROM OPERATION
+                                RIGHT JOIN GOODS
+                                    USING(ID_GOODS)
+                              GROUP BY ID_GOODS);
+
+вектор у кого сколько операций:
+SELECT COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN GOODS
+            USING(ID_GOODS)
+    GROUP BY ID_GOODS
+
+
+
+## 10  ####################
+агентав, кто поставлял ('A') папки по макс цене
+
+SELECT ID_GOODS, ID_AG, NAME_AG, PRICE
+        FROM OPERATION
+        RIGHT JOIN AGENT
+            USING(ID_AG)
+    where TYPEOP = 'A'
+        AND ID_GOODS = (SELECT ID_GOODS
+                           FROM GOODS
+                        WHERE NOMENCLATURE='Папки')
+        AND PRICE >= (SELECT MAX(PRICE)
+                         FROM OPERATION
+                      where TYPEOP = 'A'
+                          AND ID_GOODS = (SELECT ID_GOODS
+                                              FROM GOODS
+                                          WHERE NOMENCLATURE='Папки'));
+
+
+
+
+## 11  ####################
+поставщики, работающие с > 1 складом 
+
+SELECT ID_AG, NAME_AG, COUNT(DISTINCT ID_WH)
+        FROM OPERATION
+        RIGHT JOIN AGENT
+            USING(ID_AG)
+    GROUP BY ID_AG, NAME_AG
+    HAVING COUNT(DISTINCT ID_WH) > 1;
+
+
+
+## 12  ####################
+товары c кот. работает тока 1 агент 
+
+SELECT ID_GOODS, NOMENCLATURE, COUNT(DISTINCT ID_AG)
+        FROM OPERATION
+        RIGHT JOIN GOODS
+            USING(ID_GOODS)
+    GROUP BY ID_GOODS, NOMENCLATURE
+    HAVING COUNT(DISTINCT ID_AG) = 1;
+
+
+
+## 13  ####################
+товары кот. "Астера" больше всех поставил 
+
+SELECT NOMENCLATURE, ID_GOODS, ID_AG, NAME_AG, COUNT(ID)
+        FROM OPERATION
+        RIGHT JOIN AGENT
+            USING(ID_AG)
+        RIGHT JOIN GOODS
+            USING(ID_GOODS)
+    WHERE NAME_AG = 'Астра'
+    GROUP BY NOMENCLATURE, ID_GOODS, ID_AG, NAME_AG
+    HAVING COUNT(ID) >= ALL (SELECT COUNT(ID)
+                                  FROM OPERATION
+                                  RIGHT JOIN AGENT
+                                      USING(ID_AG)
+                              WHERE NAME_AG = 'Астра'
+                              GROUP BY ID_AG, ID_GOODS);
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,164 @@
+#   ####################
+предикат IN
+
+проверяет, присутствует ли значение в указанном списке
+
+список - мб. из константных значений, 
+               либо рез. подзапроса
+
+#   ####################
+
+
+
+#1  ####################
+SELECT CUSTOMER
+        FROM CUSTOMER
+    WHERE CUST_NO IN (SELECT CUST_NO
+                          FROM SALES
+                      WHERE ORDER_DATE='12.12.1993');
+
+список заказчиков, с которыми был договор 12дек 1993г.
+
+
+
+#2  ####################
+SELECT FULL_NAME
+        FROM EMPLOYEE
+    WHERE DEPT_NO IN (SELECT DEPT_NO
+                          FROM DEPARTMENT
+                      WHERE MNGR_NO IS NULL);
+
+список служащих отделов без манагеров
+
+
+
+#   ####################
+предикат ALL
+
+проверяет, является ли сравнение (об. нер-во) 
+  истинным для Всех значений, возвращ Подзапросом (!)
+
+#   ####################
+
+
+
+#3  ####################
+SELECT PROJ_ID, FISCAL_YEAR ,SUM(PROJECTED_BUDGET),
+            (SELECT MAX(BUDGET)
+                FROM DEPARTMENT)
+        FROM PROJ_DEPT_BUDGET
+    GROUP BY PROJ_ID, FISCAL_YEAR
+        HAVING SUM (PROJECTED_BUDGET)> ALL(SELECT BUDGET
+                                               FROM DEPARTMENT);
+
+проекты, годовою бюджет кот-ых > бюджета любого (Всех) отделов
+
+
+
+#   ####################
+предикат ANY (SOME)
+
+проверяет, является ли сравнение истинным для
+  Хотя бы 1 значения, возвращ Подзапросом (!) 
+
+применяются при сравнении или проверке условий
+  via LIKE, CONTAINING, etc.
+#   ####################
+
+
+
+#4  ####################
+SELECT E.EMP_NO, E.FULL_NAME, E.HIRE_DATE
+        FROM EMPLOYEE E
+    WHERE E.HIRE_DATE+365 > ANY(SELECT SH.CHANGE_DATE
+                                   FROM SALARY_HISTORY SH
+                               WHERE SH.EMP_NO = E.EMP_NO);
+
+работники, у кот-ых хотя бы 1 изменение оклада
+  в течении первого года работы
+
+
+
+#   ####################
+предикат EXISTS (NOT EXISTS)
+
+определяет, сущ ли хоть 1 значение в
+  выходном результате подзапроса
+
+в больш случаев подзапросы в предикате EXISTS -
+  - коррелированны, т.е. усл поиска подзапроса связ
+  с одним или более столбцами осн запроса
+
+т.к. смысл этого предиката - проверить сущ картежей в подзапросе,
+  сам подзапрос мож иметь любой список возвращ столбцов,
+  в частности это мб 1 столбец с константой
+
+#   ####################
+
+
+
+#5  ####################
+SELECT FULL_NAME
+        FROM EMPLOYEE e
+    WHERE DEPT_NO =130 AND NOT EXISTS (SELECT *  --SALES_REP
+                                           FROM SALES s
+                                       WHERE s.SALES_REP=e.EMP_NO);
+
+сотрудники отдела №130, никогда не оформ заказ
+
+можно и ч-з NOT IN:
+
+SELECT FULL_NAME
+        FROM EMPLOYEE E
+    WHERE DEPT_NO =130 AND E.EMP_NO NOT IN(SELECT S.SALES_REP
+                                               FROM SALES S);
+
+
+
+#6  ####################
+SELECT A.FULL_NAME
+        FROM EMPLOYEE A
+    WHERE EXISTS(SELECT 1
+                    FROM PROJECT P
+                 WHERE P.TEAM_LEADER = A.EMP_NO);
+
+список сотрудников, кто руководитель проектов
+
+
+
+#   ####################
+предикат SINGULAR (NOT SINGULAR)
+
+проверяет, возвр ли Подзапрос в точности 1 знач
+
+если возвр null или > 1 значч, то
+  SINGULAR возвращает false
+
+#   ####################
+
+
+
+#7  ####################
+SELECT FULL_NAME
+        FROM EMPLOYEE E
+    WHERE SINGULAR (SELECT *
+                        FROM SALES S
+                    WHERE S.SALES_REP=E.EMP_NO);
+
+список сотрудников, кто руководитель проектов
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

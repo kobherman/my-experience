@@ -1,0 +1,128 @@
+#   ####################
+Inner join
+
+исп в SELECT для неннормализованной таблицы - 
+		столбцы из разных таблиц
+мн-во таких столбцов - Поток
+
+для соединения неск строк из разных таблиц в одну строку - 
+		исп. условия
+Внутрение условия:
+  2 потока -> 1 : отбрасывает не прошедшие условию строки
+Внешние условия:
+  2 потока -> 1 : выбирает строки, даже если в нек. случ. не
+                    найдено соотв
+Отсутствующие данные - NULL
+
+во внешнем соединении различают: левую и правую таблицы
+  => различают Левое, Правое и Полное внешнее соединение
+
+можно в принципе и таблица сама с собой
+
+
+полный синтаксис
+	FROM <таблица> [<алиас>]{[INNER]|{LEFT|RIGHT|FULL}[OUTER] } JOIN
+	     <таблица> [<алиас>]{[ON <условие соединения>[<соединение>]
+
+нет вида => внутреннее.
+есть вид => можно не указ, что внешнее
+#   ####################
+
+
+
+#1  ####################
+SELECT FULL_NAME, DEPARTMENT
+    FROM DEPARTMENT JOIN EMPLOYEE ON MNGR_NO = EMP_NO;
+
+список менеджеров отделов + название отдела
+  (FULL_NAME из EMPLOYEE, DEPARTMENT из DEPARTMENT)
+т.к. где-то нету менеджеров => эти отделы не уч в соединении
+
+
+
+#2  ####################
+SELECT FULL_NAME, DEPARTMENT
+        FROM DEPARTMENT A JOIN
+        EMPLOYEE B ON A.DEPT_NO =B.DEPT_NO
+    WHERE B.JOB_COUNTRY='USA';
+
+список сотрудиков из США + название отдела, где работают
+
+если у столбцов одно имя, как тут, то можно:
+
+SELECT FULL_NAME, DEPARTMENT
+        FROM DEPARTMENT JOIN EMPLOYEE USING (DEPT_NO)
+    WHERE JOB_COUNTRY='USA';
+
+
+
+#3  ####################
+SELECT FULL_NAME, JOB_TITLE, JOB_COUNTRY, SALARY
+        FROM EMPLOYEE JOIN JOB
+        USING (JOB_COUNTRY, JOB_CODE, JOB_GRADE)
+    WHERE EXTRACT(YEAR FROM HIRE_DATE) = 1993
+
+сотрудники, нанятые в 1993г. + полное название должости + 
+  + страны + зп
+(FULL_NAME - из EMPLOYEE, JOB_TITLE - из JOB,
+  JOB_COUNTRY - общее, SALARY - из EMPLOYEE)
+
+типа все три условия совпали и потом взяли нужные столбцы..?
+  JOB_COUNTRY = JOB_CODE = JOB_GRADE
+
+
+
+#4  ####################
+SELECT FULL_NAME, PROJ_NAME
+        FROM EMPLOYEE JOIN EMPLOYEE_PROJECT USING(EMP_NO)
+        JOIN PROJECT USING(PROJ_ID);
+
+список сотрудиков + названия их проектов
+
+
+
+#5  ####################
+SELECT A.DEPARTMENT, B.DEPARTMENT AS HEAD_DEPT
+        FROM DEPARTMENT A
+        JOIN DEPARTMENT B
+        ON A.HEAD_DEPT = B.DEPT_NO;
+
+назваие головного отдела для отделений, которые входят
+  в более крупные
+
+! когда одна таблица - без алисов низя !
+
+
+
+#6  ####################
+SELECT A.FULL_NAME AS EMP_1, B.FULL_NAME AS EMP_2, A.JOB_CODE, A.JOB_GRADE
+            FROM EMPLOYEE A JOIN EMPLOYEE B USING(JOB_CODE,JOB_GRADE)
+    WHERE (A.JOB_COUNTRY='USA') AND (B.JOB_COUNTRY='USA')
+        AND (A.EMP_NO<B.EMP_NO);
+
+список пар тех сотрудников из США, работающих на одой работе 
+  (job_code = job_grade)
+
+
+
+#7  ####################
+SELECT DEPARTMENT, COUNT(EMP_NO)
+        FROM DEPARTMENT JOIN EMPLOYEE USING(DEPT_NO)
+    GROUP BY DEPARTMENT
+
+для каждого отдела - кол-во сотрудников в нём
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,713 @@
+## 1  ####################
+триггер:
+  при добавление записи в LOG_FILE_2 автоматически
+  заполнять поля USER_NAME и DDATA
+(т.к. я всегда вручную заполняю столбец DDATA, и TTIME впридачу,
+  необходимо ввести проверку, не ввели ли его,
+  и только потом дозаполнять пропуски)
+
+CREATE OR ALTER TRIGGER ACTUAL_TASK11_1 FOR LOG_FILE_2
+ACTIVE AFTER INSERT POSITION 0
+AS
+begin
+    if (new.user_name is null) then
+        update log_file_2
+            set user_name = current_user
+            where id=new.id;
+
+    if (new.ttime is null) then
+        update log_file_2
+            set ttime = current_time
+            where id=new.id;
+
+    if (new.ddata is null) then
+        update log_file_2
+            set ddata = current_date
+            where id=new.id;
+end
+
+
+
+## 2  ####################
+триггер:
+  запрещающий изменение данных OPERATIONS
+(как я понимаю, нельзя применять update?)
+
+create exception operation_unupdatable
+    'Нельзя изменять данные таблицы OPERATION';
+
+CREATE OR ALTER TRIGGER ACTUAL_TASK11_2 FOR OPERATION
+ACTIVE BEFORE UPDATE POSITION 0
+AS
+begin
+
+    in autonomous transaction do
+        insert into log_file_2 (inform, ttime, ddata)
+                values('attempt to update OPERATION',
+                    current_time,
+                    current_date);
+
+    exception  operation_unupdatable;
+
+end
+
+
+
+## 3  ####################
+триггер:
+  записывает информацию о новой операции из OPERATION
+  в LOG_FILE_2
+(вид: (Агент) (увёз/привёз) (Товар) (со/на) (Склад)
+
+CREATE OR ALTER TRIGGER ACTUAL_TASK11_3 FOR OPERATION
+ACTIVE AFTER INSERT POSITION 0
+AS
+declare variable ag_name type of column agent.name_ag;
+declare variable nomen type of column goods.nomenclature;
+declare variable wh_name type of column warehouse.name;
+declare variable transported char(7);
+declare variable to_or_from char(2);
+begin
+    ag_name = (select name_ag
+                  from agent
+               where id_ag = new.id_ag);
+    if (ag_name is null) then
+    begin
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                    values('inserting into OPERATION: no such ag_id: '||:new.id_ag,
+                        current_time,
+                        current_date);
+
+        exception not_valid;
+    end
+    nomen = (select nomenclature
+                  from goods
+               where id_goods = new.id_goods);
+    if (nomen is null) then
+    begin
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                    values('inserting into OPERATION: no such goods_id: '||:new.id_goods,
+                        current_time,
+                        current_date);
+
+        exception not_valid;
+    end
+    wh_name = (select name
+                  from warehouse
+               where id_wh = new.id_wh);
+    if (wh_name is null) then
+    begin
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                    values('inserting into OPERATION: no such wh_id: '||:new.id_wh,
+                        current_time,
+                        current_date);
+
+        exception not_valid;
+    end
+
+
+    if (new.typeop = 'R') then
+    begin
+        :transported = 'привёз';
+        :to_or_from = 'со';
+    end
+    else
+    begin
+        :transported = 'увёз';
+        :to_or_from = 'на';
+    end
+
+
+    insert into log_file_2(inform)
+        values(:ag_name||' ('||:new.id_ag||') '||:transported||' '||:nomen||
+            ' ('||:new.id_goods||') '||:to_or_from||' '||:wh_name);
+
+end
+
+
+
+## 4  ####################
+триггер:
+  нельзя увезти со склада больше товара, чем там есть
+
+create exception not_enough_goods
+    'not enough selected goods in selected wh'
+
+CREATE OR ALTER trigger actual_task11_4 for operation
+active before insert position 0
+AS
+declare variable num_on_wh type of column goods_wh.quantity;
+begin
+    if (not exists (select 1
+                        from warehouse
+                    where id_wh = new.id_wh)) then
+    begin
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                    values('inserting into OPERATION: no such wh_id: '||:new.id_wh,
+                        current_time,
+                        current_date);
+
+        exception not_valid;
+    end
+    if (not exists (select 1
+                        from goods
+                    where id_goods = new.id_goods)) then
+    begin
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                    values('inserting into OPERATION: no such goods_id: '||:new.id_goods,
+                        current_time,
+                        current_date);
+
+        exception not_valid;
+    end
+
+
+    if (new.typeop = 'A') then
+    begin
+        select quantity
+            from goods_wh
+         where id_wh = new.id_wh
+            and id_goods = new.id_goods
+        into :num_on_wh;
+
+        if (num_on_wh is null or new.quantity > num_on_wh) then
+        --null -> нету -> в любом случае меньше, чем просят
+        begin
+            in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                values('getting nonexisting quantity of '||:new.id_goods||' from '||:new.id_wh,
+                        current_time,
+                        current_date);
+
+            exception not_enough_goods;
+        end
+
+    end
+
+end
+
+
+
+## 5  ####################
+триггер:
+  по логике прошлого задания: если добавилась новая запись
+  в OPERATIONS, надо изменить остаток на складе
+  (логика такая: 'A' -> - ; 'R' -> +)
+  (внимание. ведь товар может завозиться на склад впервые)
+
+CREATE OR ALTER TRIGGER ACTUAL_TASK11_5 FOR OPERATION
+ACTIVE AFTER INSERT POSITION 10
+AS
+declare variable delta_sign integer = 1;
+begin
+
+    if (exists (select 1
+                    from goods_wh gw2
+                where gw2.id_wh = new.id_wh
+                    and gw2.id_goods = new.id_goods)) then
+    begin
+
+        --запись уже есть
+        if (new.typeop = 'A') then
+            :delta_sign = -1;
+
+        insert into log_file_2 (inform, ttime, ddata)
+                values('updating GOODS_WH after OPERATION. delta = '||:delta_sign||' * '||:new.quantity,
+                        current_time,
+                        current_date);
+
+        update goods_wh gw
+            set gw.quantity = gw.quantity + :delta_sign*new.quantity
+            where gw.id_wh = new.id_wh
+                and gw.id_goods = new.id_goods;
+
+    end
+    else
+    begin
+        
+        insert into goods_wh(id_wh, id_goods, quantity)
+            values(new.id_wh,
+                   new.id_goods,
+                   new.quantity);
+        --если записи не было, триггер из предыдущего задания не дал бы
+        -- вставить эту строку => в данном случае можно не переживать по поводу знака
+
+        insert into log_file_2 (inform, ttime, ddata)
+                values('updating GOODS_WH after OPERATION. new record = '||:new.quantity,
+                        current_time,
+                        current_date);
+
+    end
+
+end
+
+
+
+## 6  ####################
+триггер:
+  если в OPERATION есть запись со складом, то
+  его низя удалять
+
+create exception cant_delete_from_operation
+    'there are records in OPERATION associated with id that is being deleted'
+
+CREATE OR ALTER TRIGGER ACTUAL_TASK11_6 FOR WAREHOUSE
+ACTIVE BEFORE DELETE POSITION 0
+AS
+begin
+
+    if (exists (select 1
+                    from operation o
+                where o.id_wh = old.id_wh)) then
+    begin
+        insert into log_file_2 (inform, ttime, ddata)
+                values('Deleting when '||:old.id_wh||' that exists in OPERATION',
+                        current_time,
+                        current_date);
+
+        exception cant_delete_from_operation;
+
+    end
+
+end
+
+
+
+
+
+#################################################################################
+#################################################################################
+############################# "Задания"/Примеры #################################
+
+
+#   ####################
+Триггеры
+
+триггеры не имеют входных и выходных пар-ов
+  =>нет удобного окошка как у процедуп
+  =>лок переменные вручную ч-з declare
+
+Замечание.
+  для отладки советуется писать в LOG_FILE
+  (обяз. in autonomous transaction do)
+
+#   ####################
+
+
+
+# 1  ####################
+одно из деловых граничеиний требует, чтобы
+  название фирмы NAME_AG, занасимое в AGENT,
+  всегда записывалось заглавными буквами
+чтобы не обременять пользователя лишними инструкциями,
+  в прикладную программу определим триггер:
+
+CREATE OR ALTER trigger task11_1 for agent
+active before insert position 0
+as
+begin
+    in autonomous transaction do
+        insert into log_file_2 (inform, ttime, ddata)
+            values(NEW.NAME_AG||'; '||UPPER(NEW.NAME_AG),
+                current_time,
+                current_date);
+
+    NEW.NAME_AG = UPPER(NEW.NAME_AG);
+
+end
+
+
+
+# 2  ####################
+триггер #1, но на update, для предусмотрения
+  всех случаев внесения имени 
+
+CREATE OR ALTER trigger task11_2 for agent
+active before update position 0
+as
+begin
+    in autonomous transaction do
+        insert into log_file_2 (inform, ttime, ddata)
+            values('update_agent: '||NEW.NAME_AG||'; '||UPPER(NEW.NAME_AG),
+                current_time,
+                current_date);
+
+    NEW.NAME_AG = UPPER(NEW.NAME_AG);
+end
+
+
+
+# 3  ####################
+триггер
+  не позволяющий понизить зарплату (INCOME) в таблице SOTR
+
+CREATE OR ALTER trigger task11_3 for sotr
+active after update position 0
+as
+begin
+    if (NEW.income<OLD.income) then
+    begin
+        in autonomous transaction do
+        insert into log_file_2 (inform, ttime, ddata)
+            values('income lowering: '||old.income||' -> '||NEW.income,
+                current_time,
+                current_date);
+
+        exception ERROR_PAY;
+
+    end
+    else
+        insert into log_file_2 (inform, ttime, ddata)
+            values('income OK update: '||old.income||' -> '||NEW.income,
+                current_time,
+                current_date);
+
+end
+
+
+
+# 4  ####################
+триггер
+  ставим по умлочанию в поле AGENT.TOWN
+    Ростов
+
+CREATE OR ALTER trigger task11_4 for agent
+active before insert or update position 1
+as
+begin
+    if (NEW.TOWN is NULL) then
+    begin
+        NEW.TOWN = 'Ростов';
+
+        insert into log_file_2 (inform, ttime, ddata)
+            values('town as def: '||new.TOWN,
+                current_time,
+                current_date);
+
+    end
+    else
+        insert into log_file_2 (inform, ttime, ddata)
+            values('town as given: '||NEW.TOWN,
+                current_time,
+                current_date);
+end
+
+
+
+# 5  ####################
+проверка и изменение данных в таблице на осонве другой таблицы
+
+триггер
+  правильного заполнения суммы по счёту
+
+CREATE OR ALTER trigger task11_5 for ORDERS
+active before insert position 0
+AS
+declare variable S numeric(17,2);
+begin
+    select sum(COST)
+            from SERVICES
+        where ID_ACC = NEW.ACC
+    into :S;
+
+    NEW.SUMMA = S;
+end
+
+#
+порядок работы с таблицами ORDERS и SERVICES:
+ 1) заводятся данные в таблицу SERVICES
+     (неск. строк в которых указан один. ID_ACC)
+ 2) затемс в ORDERS счёт с таким номером, без заполнения 
+     SUMMA
+#
+
+
+
+# 6  ####################
+триггер
+  исправляющий при изменении/добавлении в SERVICES чего-то
+  обновляется ORDERS.SUMMA
+
+в данном случае порядок работы с таблицам другой:
+  1) уже существует запись в ORDERS
+  2) что-то записывается/меняется в SERVICES
+
+CREATE OR ALTER TRIGGER TASK11_6 FOR SERVICES
+ACTIVE AFTER INSERT or update  POSITION 0
+AS
+--declare variable S numeric(17,2);
+begin
+    insert into log_file_2 (inform, ttime, ddata)
+            values('insert new service for '||NEW.id_acc||'; S_delta = '||new.cost,
+                current_time,
+                current_date);
+
+    if (exists (select acc
+                    from orders
+                where acc = new.id_acc) ) then
+    begin
+
+         update orders
+             set summa = summa + new.cost
+             where acc = new.id_acc;
+
+         insert into log_file_2 (inform, ttime, ddata)
+            values('insert new service for '||NEW.id_acc||'; S_delta = '||new.cost,
+                current_time,
+                current_date);
+
+     end
+     else
+     begin
+
+         insert into orders(acc, summa)
+            values(new.id_acc,
+                new.cost);
+
+         insert into log_file_2 (inform, ttime, ddata)
+            values('insert new service for new '||NEW.id_acc||'; S = '||new.cost,
+                current_time,
+                current_date);
+    end
+
+end
+
+
+
+# 7  ####################
+триггер
+  исправляет ключевой столбец в MY_TABLE если 
+    введён null или повторение
+
+CREATE OR ALTER TRIGGER TASK11_7 FOR MY_TABLE
+ACTIVE BEFORE INSERT or update  POSITION 0
+as
+begin
+    if (NEW.PK_MYTABLE is NULL) then
+    begin
+        NEW.PK_MYTABLE=GEN_ID(GEN_PK,2);
+
+        insert into log_file_2 (inform, ttime, ddata)
+            values('null id -> '||NEW.PK_MYTABLE,
+                current_time,
+                current_date);
+
+    end
+    else
+        while (new.pk_mytable in (select pk_mytable
+                                        from my_table) ) do
+        begin
+            insert into log_file_2 (inform, ttime, ddata)
+                values('id was in table: '||NEW.PK_MYTABLE,
+                    current_time,
+                    current_date);
+
+            NEW.PK_MYTABLE=GEN_ID(GEN_PK,2);
+        end
+
+end
+
+прим.
+  while необходим, т.к. условно индекс 10 мог быть добавлен вручную,
+  а в генераторе последний сохранённый = 8
+  => следующим сгенерированным индексом будет 10, что уже есть в таблице
+    => нужно генерировать занаво
+
+
+
+# 8  ####################
+ссылочная целостность таблиц LOOKUP и REQUESTOR
+
+триггер, проверяющий ограничение ссылочной целостности
+  на стороне дочерней таблицы (REQUESTOR)
+(создаётся запись, только если такой id уже сущ. в LOOKUP)
+
+CREATE OR ALTER trigger task11_8_1 for requestor
+active before insert or update position 0
+as
+begin
+    if (NEW.LOOKUP_ID IS NOT NULL
+            AND NOT EXISTS(select L_ID
+                              from LOOKUP
+                          where L_ID = NEW.LOOKUP_ID)) then
+    begin
+        in autonomous transaction do
+                insert into log_file_2 (inform, ttime, ddata)
+                    values('no in lookup: '||NEW.LOOKUP_ID,
+                        current_time,
+                        current_date);
+
+        exception NOT_VALID;
+    end
+
+
+end
+
+второй триггер проверяет возможность уд. и ред.
+  строки в тоблице соответсвтия LOOKUP
+(если меняем l_id или удаляем, но есть запись в
+  REQUESTOR, то отмена)
+
+CREATE OR ALTER trigger task11_8_2 for lookup
+active before update or delete position 0
+as
+begin
+
+    if (UPDATING AND (NEW.L_ID<>OLD.L_ID)
+        OR DELETING)    then
+
+        if ( EXISTS (select LOOKUP_ID
+                        from REQUESTOR
+                    where LOOKUP_ID=OLD.L_ID)) then
+        begin
+            in autonomous transaction do
+                insert into log_file_2 (inform, ttime, ddata)
+                    values('exists in lookup: '||OLD.L_ID,
+                        current_time,
+                        current_date);
+
+            exception NOT_VALID;
+        end
+
+end
+
+
+
+# 9  ####################
+триггер
+  для каскадного изменения записей в доч. таблице
+    при изменении перв. ключа в родительской
+
+CREATE OR ALTER TRIGGER TASK11_9 FOR LOOKUP
+ACTIVE BEFORE UPDATE POSITION 0
+as
+begin
+    if (NEW.L_ID<>OLD.L_ID) then
+        if (EXISTS( select LOOKUP_ID
+                        from REQUESTOR
+                    where LOOKUP_ID=OLD.L_ID)) then
+
+            update REQUESTOR
+                set LOOKUP_ID=NEW.L_ID
+                where LOOKUP_ID=OLD.L_ID;
+end
+
+
+
+# 10  ####################
+###
+использование Log Manager из IBExpert
+###
+
+
+
+# 12  ####################
+триггер
+  написанный вручную, который фиксирует все изменения в 
+  таблице GOODS в LOG_FILE_2
+
+CREATE OR ALTER TRIGGER TASK11_12 FOR GOODS
+ACTIVE AFTER INSERT OR UPDATE OR DELETE POSITION 32760
+as
+declare variable tid integer;
+declare variable type_of_op char(1);
+declare variable g_id type of column goods.id_goods;
+begin
+    tid = gen_id(task11_12_for_goods,1);
+    if (updating) then
+    begin
+        :type_of_op = 'U';
+        :g_id = new.id_goods;
+    end
+    if (inserting) then
+    begin
+        :type_of_op = 'I';
+        :g_id = new.id_goods;
+    end
+    if (deleting) then
+    begin
+        :type_of_op = 'D';
+        :g_id = old.id_goods;
+    end
+
+
+    insert into log_file_2 (inform, user_name, ttime, ddata)
+        values (:tid||': GOODS '||:type_of_op||'; ID_goods = '||:g_id,
+             user, current_time, current_date);
+
+
+end
+
+
+
+# 13  ####################
+триггер
+  олицетворяющий некое искуственное правило, которое сложно
+  задать без триггера
+  (в дан. случ. нельзя менять таблицу (в праздник) 1 января)
+
+CREATE OR ALTER trigger task11_13 for operation
+active before insert or update or delete position 0
+AS
+declare variable dt integer;
+declare variable mn integer;
+begin
+    dt = extract(day from current_date);
+    mn = extract(month from current_date);
+
+    if (dt=1 and mn=1) then
+        exception HOLIDAY;
+end
+
+
+
+# 14  ####################
+триггер
+  из #13, но записываем в LOG_FILE_2, если попытка ред. таблицы
+  была в четверг
+
+CREATE OR ALTER trigger task11_13_14 for operation
+active before insert or update or delete position 0
+AS
+declare variable dt integer;
+declare variable mn integer;
+declare variable wd integer;
+begin
+    dt = extract(day from current_date);
+    mn = extract(month from current_date);
+    wd = extract(weekday from current_date);
+
+    if (wd=4) then
+        in autonomous transaction do
+            insert into log_file_2 (inform, ttime, ddata)
+                values('worhing with OPERATION on Thu',
+                    current_time,
+                    current_date);
+
+    if (dt=1 and mn=1) then
+        exception HOLIDAY;
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,112 @@
+#1  ####################
+SELECT e.FULL_NAME, e.SALARY,
+    (SELECT MAX (m.SALARY)
+        FROM EMPLOYEE m
+        WHERE m.JOB_COUNTRY='USA') AS MAX_SALARY_USA
+    FROM EMPLOYEE e
+    WHERE e.JOB_COUNTRY='USA'
+
+список сотрудников из США + оклад + макс оплата СШАшников
+
+!! тут запрос некоррелированным, т.к. не связан с основным.
+      тут как константа                                      !!
+
+можно разницу между оплатой сотрудника и макс:
+SELECT e.FULL_NAME, e.SALARY,
+    (SELECT MAX (m.SALARY)
+        FROM EMPLOYEE m
+        WHERE m.JOB_COUNTRY='USA') - e.SALARY AS MAX_SALARY_USA
+    FROM EMPLOYEE e
+    WHERE e.JOB_COUNTRY='USA'
+
+
+
+#2  ####################
+SELECT FULL_NAME, SALARY,
+            (SELECT CURRENCY FROM COUNTRY
+            WHERE COUNTRY.COUNTRY=EMPLOYEE.JOB_COUNTRY) AS CURRENCY
+        FROM EMPLOYEE;
+
+список сотрудников + оклад + валюта
+
+!! запрос коррелированный !!
+(можно было и жойн, офк)
+
+
+
+#3  ####################
+SELECT FULL_NAME, SALARY
+        FROM EMPLOYEE a
+    WHERE a.JOB_COUNTRY='USA' and
+        a.SALARY >(SELECT AVG(b.SALARY)
+                        FROM EMPLOYEE b
+                        WHERE b.JOB_COUNTRY='USA');
+
+сотрудники из сша с окладом выше среднего
+
+
+
+#4  ####################
+SELECT a.DEPARTMENT
+        FROM DEPARTMENT a
+    WHERE a.BUDGET = (SELECT b.BUDGET
+                            FROM DEPARTMENT b
+                        WHERE b.DEPT_NO=130)
+        AND NOT a.DEPT_NO=130;
+
+названия отделов, бюдж кот-ых совпадает
+  с отделом №130
+
+
+
+#5  ####################
+SELECT PROJ_ID, MAX(PROJECTED_BUDGET) AS TOTAL_BUDGET
+        FROM PROJ_DEPT_BUDGET
+    WHERE FISCAL_YEAR=1994
+    GROUP BY PROJ_ID
+        HAVING MAX(PROJECTED_BUDGET) > (SELECT AVG(A.PROJECTED_BUDGET)
+                                            FROM PROJ_DEPT_BUDGET A
+                                        WHERE A.FISCAL_YEAR=1994);
+
+проекты, для кот-ых мах бюджет, выделявш для 1 отдела в 1994г.
+  был выше бюдж по всем проектам и отделам в этом году
+
+
+
+#6  ####################
+SELECT P.PROJ_NAME, T.DEPT_NAME
+        FROM PROJECT P
+        LEFT JOIN
+        (SELECT PD.PROJ_ID, D.DEPARTMENT
+            FROM PROJ_DEPT_BUDGET PD
+            JOIN DEPARTMENT D
+                ON (PD.DEPT_NO=D.DEPT_NO)
+            WHERE PD.FISCAL_YEAR=1995)
+                    AS T (PROJ_ID, DEPT_NAME)
+        ON(P.PROJ_ID=T.PROJ_ID)
+
+
+для каждого отдела - какие отделы уч в выполнении в 1995г.
+кто не выполнялся в 1995г. - null
+
+!!! тут подзапрос формирует темп таблицу T
+      со столбцами PROJ_ID, DEPT_NAME         !!!
+таблица используется в описании запроса как и обычные 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

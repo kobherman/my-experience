@@ -1,0 +1,179 @@
+## 1  ####################
+для каждой страны из COUNTRY - кол-во заказчиков
+  из это страны + сумм стоимость их заказов 
+
+SELECT COUNTRY, COUNT (CUSTOMER), SUM (TOTAL_VALUE)
+        FROM CUSTOMER
+        JOIN SALES
+            USING(CUST_NO)
+        RIGHT JOIN COUNTRY
+            USING (COUNTRY)
+    GROUP BY COUNTRY;
+
+
+
+## 2  ####################
+для каждого отдела - руководитель + n(сотрудников)
+
+SELECT D.DEPARTMENT, E2.FULL_NAME AS DEPT_HEAD, COUNT(E1.EMP_NO)
+        FROM DEPARTMENT D
+        LEFT JOIN EMPLOYEE E1
+            ON (D.DEPT_NO = E1.DEPT_NO)
+        LEFT JOIN EMPLOYEE E2
+            ON (D.MNGR_NO = E2.emp_no)
+    GROUP BY DEPARTMENT, E2.FULL_NAME;
+
+
+
+## 3  ####################
+для каждо вакансии (должность, страна, квалификация) -
+  - кол-во сотрудников + средний оклад 
+
+SELECT JOB_TITLE, JOB_COUNTRY, JOB_GRADE, COUNT (EMP_NO), AVG (SALARY)
+        FROM JOB
+        LEFT JOIN EMPLOYEE
+            USING (JOB_COUNTRY, JOB_GRADE, JOB_CODE)
+    GROUP BY JOB_TITLE, JOB_COUNTRY, JOB_GRADE;
+
+
+
+================================================================================
+================================================================================
+
+
+
+## 4  ####################
+список наименовани товаров, которые есть на "Складе 2" +
+  + кол-во + ед.измерения
+
+SELECT NAME, NOMENCLATURE, QUANTITY, MEASURE
+        FROM warehouse
+        JOIN GOODS_WH
+            USING (ID_WH)
+        JOIN GOODS
+            USING (ID_GOODS)
+    WHERE (NAME='Склад 2');
+
+
+
+## 5  ####################
+отчёт операций в 1-ом квартале:
+  название товара + имя поставщика + название склада +
+  + тип операции + кол-во + цена + сумма по операции
+
+SELECT ID AS ID_OPER, NOMENCLATURE, NAME_AG, NAME, TYPEOP,
+            O.QUANTITY, PRICE, (PRICE*O.QUANTITY) AS TOTAL_PRICE,
+            O.OP_DATE
+        FROM OPERATION O
+        JOIN GOODS
+            USING (ID_GOODS)
+        JOIN AGENT
+            USING (ID_AG)
+        JOIN WAREHOUSE
+            USING (ID_WH)
+    WHERE EXTRACT(MONTH FROM OP_DATE) BETWEEN 1 AND 3
+        AND EXTRACT(YEAR FROM OP_DATE) = 2007;
+
+
+
+## 6  ####################
+информация по операциях с товаром 12л. тетрадь:
+  дата операции, тип (A - 'привозили', R - 'увозили'), назв. склада,
+  назв. агентнта, тот. стоимость 
+
+SELECT NOMENCLATURE, ID AS ID_OPER, OP_DATE, NAME_AG, NAME,
+    IIF(TYPEOP = 'A', 'привозили', 'увозили'),
+    (PRICE*O.QUANTITY) AS TOTAL_PRICE
+        FROM OPERATION O
+        JOIN GOODS
+            USING (ID_GOODS)
+        JOIN AGENT
+            USING (ID_AG)
+        JOIN WAREHOUSE
+            USING (ID_WH)
+    WHERE NOMENCLATURE = 'Тетрадь 12л.'
+    ORDER BY ID_OPER; 
+
+
+
+## 7  ####################
+кол-во разных товаров, с которыми работал Каждый поставщик
+-> для Каждого поставщика - с какими товарами работал 
+
+SELECT NAME_AG, COUNT(DISTINCT ID_GOODS)
+        FROM AGENT
+        LEFT JOIN OPERATION
+            USING (ID_AG)
+    GROUP BY NAME_AG;
+
+
+
+
+## 8  ####################
+для Каждого поставщика - мин. стоимость операции
+
+SELECT NAME_AG, MIN (QUANTITY * PRICE)
+        FROM OPERATION O
+        RIGHT JOIN AGENT
+            USING (ID_AG)
+    GROUP BY NAME_AG
+
+
+
+## 9  ####################
+для Каждого склада - сумм. кол-во товаров на нём
+
+SELECT NAME,
+    COALESCE (SUM (QUANTITY), 0)         --IIF (SUM (QUANTITY) IS NOT NULL, SUM (QUANTITY), 0)
+        FROM WAREHOUSE
+        LEFT JOIN GOODS_WH
+            USING (ID_WH)
+    GROUP BY NAME 
+
+
+
+================================================================================
+================================================================================
+
+
+
+## 10  ####################
+общий список сотрудников и заказчиков + страна
+ 
+SELECT FULL_NAME, 'EMPLOYEE' AS TITLE, JOB_COUNTRY AS COUNTRY
+        FROM EMPLOYEE
+UNION ALL
+SELECT CUSTOMER,'CUSTOMER', COUNTRY
+        FROM CUSTOMER
+ 
+
+
+## 11  ####################
+список Всех городов, задействованных в БД "учёт на складе"
+
+SELECT TOWN       --W.ID_WH AS ID, 'from warehouse' AS TITLE, W.TOWN AS TOWN
+        FROM WAREHOUSE
+UNION
+SELECT TOWN       --A.ID_AG, 'from agent', A.TOWN
+        FROM AGENT
+    WHERE TOWN IS NOT NULL 
+
+*UNION     - 4 города
+*UNION ALL - 11
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -18,4 +18,4 @@
 
 # Результаты
 Генерируемые окраски после ~280-ти эпох обучения.
-[](/imgs/result_collage.png)
+[](imgs/result_collage.png)
